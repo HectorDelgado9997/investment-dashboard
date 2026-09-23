@@ -14,8 +14,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("Investment Dashboard")
-st.caption("Seguimiento simple de mi portafolio")
+st.title("Investment Dashboard de Héctor Salomón")
+st.caption("Seguimiento simple del portafolio de mi hijo")
 
 
 # -----------------------------
