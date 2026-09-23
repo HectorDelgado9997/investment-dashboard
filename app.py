@@ -9,7 +9,7 @@ import plotly.express as px
 # -----------------------------
 
 st.set_page_config(
-    page_title="Investment Dashboard",
+    page_title="Investment Dashboard de Héctor Salomón",
     page_icon="📈",
     layout="wide"
 )
