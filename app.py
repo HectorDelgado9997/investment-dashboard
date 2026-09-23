@@ -18,150 +18,105 @@ st.title("Investment Dashboard de Héctor Salomón")
 st.caption("Seguimiento simple del portafolio de mi hijo")
 
 
-# -----------------------------
-# CARGAR PORTAFOLIO
-# -----------------------------
-
+# Cargar archivo
 portfolio = pd.read_csv("portfolio.csv")
+portfolio.columns = portfolio.columns.str.strip()
 
-tickers = portfolio["Ticker"].tolist()
-
-
-# -----------------------------
-# DESCARGAR PRECIOS
-# -----------------------------
-
+# Obtener precios actuales
 @st.cache_data(ttl=300)
-def get_prices(tickers):
+def get_price(ticker):
+    data = yf.Ticker(ticker).history(period="5d")
+    return data["Close"].iloc[-1]
 
-    prices = {}
+portfolio["Current_Price"] = portfolio["Ticker"].apply(get_price)
 
-    for ticker in tickers:
-
-        data = yf.Ticker(ticker)
-
-        history = data.history(period="5d")
-
-        if not history.empty:
-            prices[ticker] = history["Close"].iloc[-1]
-        else:
-            prices[ticker] = None
-
-    return prices
-
-
-prices = get_prices(tickers)
-
-
-portfolio["Current_Price"] = portfolio["Ticker"].map(prices)
-
-
-# -----------------------------
-# CÁLCULOS
-# -----------------------------
-
-portfolio["Cost_Basis"] = (
-    portfolio["Shares"] *
-    portfolio["Purchase_Price"]
+# Cálculos
+portfolio["Invested"] = (
+    portfolio["Shares"] * portfolio["Purchase_Price"]
 )
 
 portfolio["Current_Value"] = (
-    portfolio["Shares"] *
-    portfolio["Current_Price"]
+    portfolio["Shares"] * portfolio["Current_Price"]
 )
 
-portfolio["Profit_Loss"] = (
-    portfolio["Current_Value"] -
-    portfolio["Cost_Basis"]
+portfolio["P_L"] = (
+    portfolio["Current_Value"] - portfolio["Invested"]
 )
 
 portfolio["Return_%"] = (
-    portfolio["Profit_Loss"] /
-    portfolio["Cost_Basis"]
+    portfolio["P_L"] / portfolio["Invested"]
 ) * 100
 
-
-# -----------------------------
-# MÉTRICAS GENERALES
-# -----------------------------
-
-total_cost = portfolio["Cost_Basis"].sum()
-
+# Totales
+total_invested = portfolio["Invested"].sum()
 total_value = portfolio["Current_Value"].sum()
+total_pl = portfolio["P_L"].sum()
+total_return = (total_pl / total_invested) * 100
 
-total_profit = total_value - total_cost
+# Color total
+pl_color = "green" if total_pl >= 0 else "red"
 
-total_return = (total_profit / total_cost) * 100
-
-
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 col1.metric(
-    "Capital invertido",
-    f"${total_cost:,.2f}"
+    "Invested",
+    f"${total_invested:,.2f}"
 )
 
 col2.metric(
-    "Valor actual",
+    "Current value",
     f"${total_value:,.2f}"
 )
 
-col3.metric(
-    "Ganancia / pérdida",
-    f"${total_profit:,.2f}"
+with col3:
+    st.metric(
+        "P/L",
+        f"${total_pl:,.2f}",
+        f"{total_return:.2f}%"
+    )
+
+# Tabla
+display = portfolio[
+    [
+        "Ticker",
+        "Shares",
+        "Purchase_Price",
+        "Current_Price",
+        "P_L",
+        "Return_%"
+    ]
+].copy()
+
+display.columns = [
+    "Ticker",
+    "Shares",
+    "Avg Price",
+    "Current Price",
+    "P/L",
+    "Return %"
+]
+
+def color_pl(value):
+    if isinstance(value, (int, float)):
+        if value > 0:
+            return "color: green"
+        elif value < 0:
+            return "color: red"
+    return ""
+
+styled = (
+    display.style
+    .format({
+        "Avg Price": "${:,.2f}",
+        "Current Price": "${:,.2f}",
+        "P/L": "${:,.2f}",
+        "Return %": "{:.2f}%"
+    })
+    .map(color_pl, subset=["P/L", "Return %"])
 )
-
-col4.metric(
-    "Rendimiento",
-    f"{total_return:.2f}%"
-)
-
-
-# -----------------------------
-# TABLA
-# -----------------------------
-
-st.subheader("Portafolio")
 
 st.dataframe(
-    portfolio,
-    use_container_width=True
-)
-
-
-# -----------------------------
-# DISTRIBUCIÓN
-# -----------------------------
-
-st.subheader("Distribución del portafolio")
-
-fig = px.pie(
-    portfolio,
-    values="Current_Value",
-    names="Ticker",
-    hole=0.4
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
-
-
-# -----------------------------
-# RENDIMIENTO
-# -----------------------------
-
-st.subheader("Rendimiento por inversión")
-
-fig2 = px.bar(
-    portfolio,
-    x="Ticker",
-    y="Return_%",
-    text_auto=".2f"
-)
-
-st.plotly_chart(
-    fig2,
-    use_container_width=True
+    styled,
+    use_container_width=True,
+    hide_index=True
 )
