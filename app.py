@@ -27,48 +27,92 @@ portfolio.columns = portfolio.columns.str.strip()
 
 
 # -------------------------
-# PRECIO ACTUAL
+# TICKERS
+# -------------------------
+
+tickers = portfolio["Ticker"].unique().tolist()
+
+# Agregamos USD/MXN
+download_tickers = tickers + ["MXN=X"]
+
+
+# -------------------------
+# DESCARGAR PRECIOS
 # -------------------------
 
 @st.cache_data(ttl=300)
-def get_price(ticker):
+def get_prices(tickers):
 
-    data = yf.Ticker(ticker).history(period="5d")
+    data = yf.download(
+        tickers,
+        period="5d",
+        interval="1d",
+        auto_adjust=True,
+        progress=False
+    )
 
-    if data.empty:
-        return None
+    return data
 
-    return data["Close"].iloc[-1]
+
+data = get_prices(download_tickers)
 
 
 # -------------------------
-# TIPO DE CAMBIO USD/MXN
+# EXTRAER ÚLTIMOS PRECIOS
 # -------------------------
 
-usd_mxn = get_price("MXN=X")
+prices = {}
+
+for ticker in tickers:
+
+    try:
+        series = data["Close"][ticker].dropna()
+
+        if not series.empty:
+            prices[ticker] = float(series.iloc[-1])
+        else:
+            prices[ticker] = None
+
+    except:
+        prices[ticker] = None
+
+
+# USD/MXN
+try:
+
+    fx_series = data["Close"]["MXN=X"].dropna()
+
+    usd_mxn = float(fx_series.iloc[-1])
+
+except:
+
+    usd_mxn = None
 
 
 # -------------------------
-# CONVERTIR TODO A MXN
+# CONVERTIR A MXN
 # -------------------------
 
-def current_price_mxn(ticker):
+def price_in_mxn(ticker):
 
-    price = get_price(ticker)
+    price = prices.get(ticker)
 
     if price is None:
         return None
 
-    # Acciones mexicanas
+    # Yahoo ya entrega .MX en pesos mexicanos
     if ticker.endswith(".MX"):
         return price
 
-    # Activos estadounidenses
+    # Los demás activos están en USD
+    if usd_mxn is None:
+        return None
+
     return price * usd_mxn
 
 
 portfolio["Current_Price"] = portfolio["Ticker"].apply(
-    current_price_mxn
+    price_in_mxn
 )
 
 
@@ -98,24 +142,54 @@ portfolio["Return_%"] = (
 
 
 # -------------------------
+# VALIDAR PRECIOS
+# -------------------------
+
+missing = portfolio[
+    portfolio["Current_Price"].isna()
+]["Ticker"].unique()
+
+if len(missing) > 0:
+
+    st.warning(
+        "No se pudo obtener precio para: "
+        + ", ".join(missing)
+    )
+
+
+# -------------------------
 # TOTALES
 # -------------------------
 
-total_invested = portfolio["Invested"].sum()
-total_value = portfolio["Current_Value"].sum()
+valid = portfolio.dropna(
+    subset=["Current_Value"]
+)
 
-total_pl = total_value - total_invested
+total_invested = valid["Invested"].sum()
+total_value = valid["Current_Value"].sum()
 
-total_return = (
-    total_pl / total_invested
-) * 100
+total_pl = (
+    total_value -
+    total_invested
+)
+
+if total_invested > 0:
+
+    total_return = (
+        total_pl /
+        total_invested
+    ) * 100
+
+else:
+
+    total_return = 0
 
 
 # -------------------------
 # MÉTRICAS
 # -------------------------
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 col1.metric(
     "Invertido",
@@ -132,6 +206,20 @@ col3.metric(
     f"${total_pl:,.2f}",
     f"{total_return:.2f}%"
 )
+
+if usd_mxn is not None:
+
+    col4.metric(
+        "USD/MXN",
+        f"${usd_mxn:.2f}"
+    )
+
+else:
+
+    col4.metric(
+        "USD/MXN",
+        "N/D"
+    )
 
 
 # -------------------------
@@ -165,6 +253,9 @@ display.columns = [
 
 def color_result(value):
 
+    if pd.isna(value):
+        return ""
+
     if value > 0:
         return "color: green"
 
@@ -181,10 +272,13 @@ styled = (
         "Actual": "${:,.2f}",
         "P/L": "${:,.2f}",
         "Rendimiento": "{:.2f}%"
-    })
+    }, na_rep="N/D")
     .map(
         color_result,
-        subset=["P/L", "Rendimiento"]
+        subset=[
+            "P/L",
+            "Rendimiento"
+        ]
     )
 )
 
@@ -193,13 +287,4 @@ st.dataframe(
     styled,
     use_container_width=True,
     hide_index=True
-)
-
-
-# -------------------------
-# FX
-# -------------------------
-
-st.caption(
-    f"USD/MXN: {usd_mxn:.2f}"
 )
